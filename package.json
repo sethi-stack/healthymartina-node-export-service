@@ -1,0 +1,15 @@
+{
+  "name": "healthymartina-pdf-export-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "External async PDF export worker for calendar exports",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "uuid": "^11.1.0"
+  }
+}
