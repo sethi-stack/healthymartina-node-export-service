@@ -1,0 +1,60 @@
+{
+  "reference_file": "src/templates/legacy/assets/reverse_engineered_healthy_martina_pdf.html",
+  "composition_entry": "src/templates/legacy/index.js",
+  "model_builder": "src/templates/legacy/model.js",
+  "sections": [
+    {
+      "name": "cover",
+      "component": "src/templates/legacy/components/cover.js",
+      "joined_in_index_line": 13,
+      "reference_signals": [
+        "data-page=\"1\"",
+        "title + brand + email block",
+        "full-page hero image"
+      ],
+      "model_keys": ["cover.title", "cover.image", "cover.brandName", "cover.brandEmail"]
+    },
+    {
+      "name": "weekly_plan",
+      "component": "src/templates/legacy/components/weeklyPlan.js",
+      "joined_in_index_line": 14,
+      "reference_signals": [
+        "data-page=\"2\"",
+        "meal labels DESAYUNO/COMIDA/SNACK/CENA",
+        "per-day grouped meal cards with image strips"
+      ],
+      "model_keys": ["weeklyPlan.days[].dayKey", "weeklyPlan.days[].meals"]
+    },
+    {
+      "name": "nutrition_summary",
+      "component": "src/templates/legacy/components/nutrition.js",
+      "joined_in_index_line": 15,
+      "reference_signals": [
+        "nutrition pages in reference",
+        "calories and nutrient summaries per day"
+      ],
+      "model_keys": ["nutritionSummary.days[]"]
+    },
+    {
+      "name": "lista",
+      "component": "src/templates/legacy/components/lista.js",
+      "joined_in_index_line": 16,
+      "reference_signals": [
+        "ingredient checklist sections",
+        "category grouping",
+        "taken/not taken visual state"
+      ],
+      "model_keys": ["lista.categories[]", "lista.takenIds[]"]
+    },
+    {
+      "name": "recipes",
+      "component": "src/templates/legacy/components/recipes.js",
+      "joined_in_index_line": 17,
+      "reference_signals": [
+        "recipe detail pages",
+        "title + image + ingredients + instructions + nutrition + tips"
+      ],
+      "model_keys": ["recipes[]"]
+    }
+  ]
+}
