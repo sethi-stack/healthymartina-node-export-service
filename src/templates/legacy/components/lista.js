@@ -16,10 +16,14 @@ function renderLista(model) {
   const renderCol = (arr) => arr.map((cat) => {
     const items = (cat.items || []).map((item) => {
       const isTaken = item.id && taken.has(item.id);
-      return `<tr><td class="checkbox-cell">${isTaken ? '&#9745;' : '&#9744;'}</td><td class="${isTaken ? 'item-taken' : ''}">${esc(item.name)}</td><td class="item-amount ${isTaken ? 'item-taken' : ''}">${esc(item.amount || '')}</td></tr>`;
+      return `<div class="lista-item-row">
+        <span class="checkbox-cell">${isTaken ? '&#9745;' : '&#9744;'}</span>
+        <span class="item-amount ${isTaken ? 'item-taken' : ''}">${esc(item.amount || '')}</span>
+        <span class="item-name ${isTaken ? 'item-taken' : ''}">${esc(item.name)}</span>
+      </div>`;
     }).join('');
 
-    return `<div class="lista-category"><div class="lista-cat-title">${esc(cat.name)}</div><table class="lista-items">${items}</table></div>`;
+    return `<div class="lista-category"><div class="lista-cat-title">${esc(cat.name)}</div><div class="lista-items">${items}</div></div>`;
   }).join('');
 
   const pages = chunk(categories, CATEGORIES_PER_PAGE);

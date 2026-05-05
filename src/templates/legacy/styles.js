@@ -37,10 +37,11 @@ function renderStyles() {
   .nutrition-bold{font-weight:700}
   .lista-grid{width:100%;border-collapse:collapse}.lista-grid td{width:50%;vertical-align:top;padding:0 8px 0 0}
   .lista-category{margin-bottom:11px;break-inside:avoid;page-break-inside:avoid}.lista-cat-title{font-size:10px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #ececec;padding-bottom:3px;margin-bottom:5px}
-  .lista-items{width:100%;border-collapse:collapse;table-layout:fixed}.lista-items td{padding:2px 2px;font-size:9px;vertical-align:top;line-height:1.2}
-  .checkbox-cell{width:16px;text-align:center;padding-right:2px}
-  .lista-items td:nth-child(2){padding-left:2px;padding-right:6px}
-  .item-amount{color:#777;font-size:8px;width:58px;text-align:right;white-space:nowrap}
+  .lista-items{width:100%}
+  .lista-item-row{display:flex;align-items:flex-start;gap:4px;margin:0 0 3px;font-size:9px;line-height:1.18}
+  .checkbox-cell{display:inline-block;width:12px;min-width:12px;text-align:center}
+  .item-amount{display:inline-block;color:#555;font-size:8px;font-weight:700;min-width:46px;white-space:nowrap}
+  .item-name{display:inline-block;flex:1 1 auto;text-align:left}
   .page-cover{padding:0;background:#e5e5e5}.cover-photo{height:74vh;padding:34px 26px 0}.cover-photo img{width:100%;height:100%;object-fit:cover;display:block}
   .cover-footer{height:26vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:36px}
   .cover-title{font-size:38px;line-height:1.05;letter-spacing:.04em;margin:0 0 12px;text-transform:uppercase;font-weight:800;color:#37544e}

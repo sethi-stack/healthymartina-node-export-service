@@ -227,6 +227,7 @@ async function generatePdf(job) {
 
 async function renderHtmlToPdf(html) {
   const renderTimeoutMs = Number(process.env.EXPORT_HTML_RENDER_TIMEOUT_MS || 120000);
+  const imageWaitTimeoutMs = Number(process.env.EXPORT_IMAGE_WAIT_TIMEOUT_MS || 45000);
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -240,7 +241,9 @@ async function renderHtmlToPdf(html) {
 
     // `networkidle0` can hang with remote assets; `domcontentloaded` is safer for HTML-to-PDF.
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: renderTimeoutMs });
-    await sleep(1200);
+    await primeImages(page);
+    await waitForImages(page, imageWaitTimeoutMs);
+    await sleep(300);
 
     const pdf = await page.pdf({
       format: 'A4',
@@ -256,6 +259,49 @@ async function renderHtmlToPdf(html) {
     return Buffer.from(pdf);
   } finally {
     await browser.close();
+  }
+}
+
+async function primeImages(page) {
+  await page.evaluate(() => {
+    const imgs = Array.from(document.images || []);
+    imgs.forEach((img) => {
+      try {
+        img.loading = 'eager';
+        img.decoding = 'sync';
+        if (!img.getAttribute('fetchpriority')) {
+          img.setAttribute('fetchpriority', 'high');
+        }
+      } catch (_e) {
+        // noop
+      }
+    });
+  });
+}
+
+async function waitForImages(page, timeoutMs) {
+  try {
+    await page.evaluate(async (limit) => {
+      const deadline = Date.now() + limit;
+      const imgs = Array.from(document.images || []);
+      const settle = (img) => new Promise((resolve) => {
+        if (img.complete) return resolve();
+
+        const remaining = Math.max(0, deadline - Date.now());
+        const timer = setTimeout(() => resolve(), remaining);
+
+        const done = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      });
+
+      await Promise.all(imgs.map(settle));
+    }, timeoutMs);
+  } catch (_e) {
+    // If image wait fails/times out, continue with best effort PDF generation.
   }
 }
 
