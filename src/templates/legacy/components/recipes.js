@@ -4,13 +4,19 @@ function nl2br(value) {
   return esc(value || '').replace(/\n/g, '<br/>');
 }
 
-function renderRecipes(model) {
+function renderRecipes(model, options = {}) {
+  const onRecipeRendered = typeof options.onRecipeRendered === 'function'
+    ? options.onRecipeRendered
+    : null;
   const recipes = model.recipes || [];
   const brandName = model.cover?.brandName || 'Healthy Martina';
   const brandEmail = model.cover?.brandEmail || 'cristina@healthymartina.com';
   if (!recipes.length) return '';
 
-  return recipes.map((r) => {
+  return recipes.map((r, index) => {
+    if (onRecipeRendered) {
+      onRecipeRendered(index + 1, recipes.length, r);
+    }
     const ingredients = (r.ingredients || []).map((i) => `<li><span>${esc(i.name)}</span><span class="right">${esc(i.amount || '')}</span></li>`).join('');
     const instructions = (r.instructions || []).map((s) => `<li>${esc(s)}</li>`).join('');
     const nutrition = (r.nutrition || []).map((n) => `<tr><td>${esc(n.name)}</td><td class="right">${esc(n.amount || '')}</td></tr>`).join('');

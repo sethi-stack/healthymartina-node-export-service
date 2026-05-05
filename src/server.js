@@ -26,6 +26,182 @@ const jobs = new Map();
 const queue = [];
 let activeWorkers = 0;
 
+const SECTION_FLAGS = {
+  CALENDAR: 1,
+  LISTA: 2,
+  NUTRITION: 4,
+};
+
+const LEGACY_EXPORT_MESSAGES = {
+  DOWNLOAD_STARTED: 'La exportación ha comenzado....',
+  EMAIL_STARTED: 'El envío de correo ha comenzado...',
+  PROFESSIONAL_STARTED: 'La exportación ha comenzado, por favor se paciente.',
+  COLLECTING_FILES: 'Estamos juntando tus archivos',
+  LISTA_RENDERING: 'Lista',
+  NUTRITION_RENDERING: 'Información nutricional',
+  CALENDAR_RENDERING: 'Calendario',
+  STITCHING_PDF: 'Por favor se paciente',
+  DOWNLOAD_SUCCESS: 'Exportación exitosa',
+  PROFESSIONAL_SUCCESS: 'La exportación a concluido con éxito',
+  EMAIL_SUCCESS: 'Se envío por mail exitosamente',
+  PROFESSIONAL_EMAIL_SUCCESS: '¡El envío de correo ha concluido con éxito!',
+  LARGE_PDF_ERROR:
+    'Este documento excede el límite de peso. para exportarlo completo haz clic en el botón de imprimir sin imágenes.',
+  GENERIC_ERROR: 'Ocurrió algún error',
+  INVALID_EMAIL: 'Su correo eléctronico no es valido....',
+};
+
+function resolveExportProfile(payload) {
+  const exportParams = Array.isArray(payload?.export_param) ? payload.export_param.map(Number) : [];
+  const hasFlag = (flag) => exportParams.includes(flag);
+  const selectedRecipes = Array.isArray(payload?.selected_recipes) ? payload.selected_recipes : [];
+
+  const isListaOnly = exportParams.length === 1 && hasFlag(SECTION_FLAGS.LISTA);
+  const isSingleRecipeExport =
+    hasFlag(SECTION_FLAGS.CALENDAR) &&
+    !hasFlag(SECTION_FLAGS.LISTA) &&
+    !hasFlag(SECTION_FLAGS.NUTRITION) &&
+    selectedRecipes.length === 1;
+
+  if (isListaOnly) return 'lista_only';
+  if (isSingleRecipeExport) return 'recipe_single';
+  return 'calendar_bundle';
+}
+
+function buildStageSequence(payload) {
+  const exportParams = Array.isArray(payload?.export_param) ? payload.export_param.map(Number) : [];
+  const hasFlag = (flag) => exportParams.includes(flag);
+  const selectedRecipes = Array.isArray(payload?.selected_recipes) ? payload.selected_recipes : [];
+  const profile = resolveExportProfile(payload);
+  const stages = ['collecting_files'];
+
+  if (profile === 'calendar_bundle' && hasFlag(SECTION_FLAGS.CALENDAR)) stages.push('calendar');
+  if (profile === 'calendar_bundle' && hasFlag(SECTION_FLAGS.NUTRITION)) stages.push('nutrition');
+  if (profile === 'lista_only' || (profile === 'calendar_bundle' && hasFlag(SECTION_FLAGS.LISTA))) stages.push('lista');
+  if ((profile === 'calendar_bundle' || profile === 'recipe_single') && selectedRecipes.length > 0) {
+    stages.push('recipe_added');
+  }
+  stages.push('stitching_pdf');
+
+  return stages;
+}
+
+function resolveDeliveryMode(payload) {
+  return payload?.delivery_mode === 'email' ? 'email' : 'download';
+}
+
+function resolveLegacyMessageVariant(payload) {
+  const profile = resolveExportProfile(payload);
+  const deliveryMode = resolveDeliveryMode(payload);
+
+  if (deliveryMode === 'email') {
+    return profile === 'calendar_bundle' ? 'professional_email' : 'email';
+  }
+
+  return profile === 'calendar_bundle' ? 'professional_download' : 'download';
+}
+
+function resolveLegacySuccessMessage(job) {
+  switch (job.message_variant) {
+    case 'professional_email':
+      return LEGACY_EXPORT_MESSAGES.PROFESSIONAL_EMAIL_SUCCESS;
+    case 'email':
+      return LEGACY_EXPORT_MESSAGES.EMAIL_SUCCESS;
+    case 'professional_download':
+      return LEGACY_EXPORT_MESSAGES.PROFESSIONAL_SUCCESS;
+    default:
+      return LEGACY_EXPORT_MESSAGES.DOWNLOAD_SUCCESS;
+  }
+}
+
+function resolveLegacyStartMessage(job) {
+  switch (job.message_variant) {
+    case 'professional_email':
+    case 'email':
+      return LEGACY_EXPORT_MESSAGES.EMAIL_STARTED;
+    case 'professional_download':
+      return LEGACY_EXPORT_MESSAGES.PROFESSIONAL_STARTED;
+    default:
+      return LEGACY_EXPORT_MESSAGES.DOWNLOAD_STARTED;
+  }
+}
+
+function resolveLegacyFailureMessage(job) {
+  const error = String(job?.error_message || '').trim();
+  if (!error) return LEGACY_EXPORT_MESSAGES.GENERIC_ERROR;
+  if (error === LEGACY_EXPORT_MESSAGES.INVALID_EMAIL) return LEGACY_EXPORT_MESSAGES.INVALID_EMAIL;
+  if (error === LEGACY_EXPORT_MESSAGES.LARGE_PDF_ERROR) return LEGACY_EXPORT_MESSAGES.LARGE_PDF_ERROR;
+  return LEGACY_EXPORT_MESSAGES.GENERIC_ERROR;
+}
+
+function buildLegacyStageMessage(job) {
+  const stage = job?.stage?.current || job?.status || 'queued';
+
+  if (stage === 'completed') return resolveLegacySuccessMessage(job);
+  if (stage === 'failed' || stage === 'invalid_email') return resolveLegacyFailureMessage(job);
+  if (stage === 'calendar') return LEGACY_EXPORT_MESSAGES.CALENDAR_RENDERING;
+  if (stage === 'lista') return LEGACY_EXPORT_MESSAGES.LISTA_RENDERING;
+  if (stage === 'nutrition') return LEGACY_EXPORT_MESSAGES.NUTRITION_RENDERING;
+  if (stage === 'stitching_pdf') return LEGACY_EXPORT_MESSAGES.STITCHING_PDF;
+  if (stage === 'recipe_added') {
+    const processed = getRecipesProcessed(job);
+    return processed > 0
+      ? `Se agregaron ${processed} recetas...`
+      : LEGACY_EXPORT_MESSAGES.COLLECTING_FILES;
+  }
+  if (stage === 'collecting_files' || stage === 'lista' || stage === 'nutrition') {
+    return LEGACY_EXPORT_MESSAGES.COLLECTING_FILES;
+  }
+
+  return resolveLegacyStartMessage(job);
+}
+
+function setJobStage(job, stage, progressFloor) {
+  if (!job.stage) {
+    job.stage = { current: 'queued', sequence: [], message: '', history: [] };
+  }
+  if (stage) {
+    job.stage.current = stage;
+  }
+  if (Number.isFinite(progressFloor)) {
+    job.progress = Math.max(job.progress, Math.max(0, Math.min(100, progressFloor)));
+  }
+  job.stage.message = buildLegacyStageMessage(job);
+
+  if (!Array.isArray(job.stage.history)) {
+    job.stage.history = [];
+  }
+  if (!Number.isFinite(job.stage_event_seq)) {
+    job.stage_event_seq = 0;
+  }
+
+  const lastHistoryEntry = job.stage.history[job.stage.history.length - 1];
+  const shouldAppendHistory =
+    !lastHistoryEntry ||
+    lastHistoryEntry.current !== job.stage.current ||
+    lastHistoryEntry.message !== job.stage.message;
+
+  if (shouldAppendHistory) {
+    job.stage_event_seq += 1;
+    job.stage.history.push({
+      id: job.stage_event_seq,
+      current: job.stage.current,
+      message: job.stage.message,
+      progress: job.progress,
+      recipes_processed: getRecipesProcessed(job),
+      total_recipe_pages: Number(job?.counters?.total_recipe_pages || 0),
+      at: Date.now(),
+    });
+  }
+}
+
+function getRecipesProcessed(job) {
+  const total = Math.max(0, Number(job?.counters?.total_recipe_pages || 0));
+  if (total <= 0) return 0;
+  if (job?.status === 'completed') return total;
+  return Math.max(0, Math.min(total, Number(job?.counters?.rendered_recipe_pages || 0)));
+}
+
 function rawBodySaver(req, _res, buf) {
   req.rawBody = buf;
 }
@@ -110,7 +286,23 @@ app.post('/jobs', requireSignedRequest, (req, res) => {
       upload_ms: null,
       total_ms: null,
     },
+    counters: {
+      total_recipe_pages: Array.isArray(body.payload?.selected_recipes)
+        ? body.payload.selected_recipes.length
+        : 0,
+      rendered_recipe_pages: 0,
+    },
+    message_variant: resolveLegacyMessageVariant(body.payload),
+    stage_event_seq: 0,
+    stage: {
+      current: 'queued',
+      sequence: buildStageSequence(body.payload),
+      message: '',
+      history: [],
+    },
   };
+
+  job.stage.message = buildLegacyStageMessage(job);
 
   jobs.set(job.id, job);
   queue.push(job.id);
@@ -125,11 +317,21 @@ app.get('/jobs/:jobId', (req, res) => {
     return res.status(404).json({ success: false, error: 'Job not found' });
   }
 
+  const recipesProcessed = getRecipesProcessed(job);
+  const counters = {
+    ...(job.counters || {}),
+    recipes_processed: recipesProcessed,
+    rendered_recipe_pages: recipesProcessed,
+  };
+
   return res.json({
     success: true,
     job_id: job.id,
     status: job.status,
     progress: job.progress,
+    message: job.stage?.message || null,
+    counters,
+    stage: job.stage,
     error_message: job.error_message,
     file_path: job.file_path,
     file_size: job.file_size,
@@ -170,6 +372,7 @@ function processQueue() {
       .catch((err) => {
         job.status = 'failed';
         job.error_message = err.message || 'Unknown error';
+        setJobStage(job, 'failed', job.progress);
       })
       .finally(() => {
         activeWorkers -= 1;
@@ -180,7 +383,8 @@ function processQueue() {
 
 async function runJob(job) {
   job.status = 'processing';
-  job.progress = 10;
+  job.progress = 5;
+  setJobStage(job, 'export_started', 5);
   job.metrics.started_at = Date.now();
 
   const started = Date.now();
@@ -189,7 +393,7 @@ async function runJob(job) {
   const pdfBuffer = await withTimeout(generatePdf(job), JOB_TIMEOUT_MS, 'PDF generation timed out');
 
   job.metrics.generation_ms = Date.now() - generationStarted;
-  job.progress = 80;
+  setJobStage(job, 'stitching_pdf', 80);
 
   const uploadStarted = Date.now();
   const { filePath, fileSize } = await uploadPdf(job, pdfBuffer);
@@ -198,15 +402,67 @@ async function runJob(job) {
   job.file_path = filePath;
   job.file_size = fileSize;
   job.status = 'completed';
-  job.progress = 100;
+  setJobStage(job, 'completed', 100);
   job.metrics.completed_at = Date.now();
   job.metrics.total_ms = Date.now() - started;
 }
 
 async function generatePdf(job) {
+  setJobStage(job, 'collecting_files', 10);
+  job.onStageChange = (stage) => {
+    if (job.status !== 'processing') return;
+
+    if (stage === 'calendar') {
+      setJobStage(job, 'calendar', 12);
+      return;
+    }
+
+    if (stage === 'nutrition') {
+      setJobStage(job, 'nutrition', 18);
+      return;
+    }
+
+    if (stage === 'lista') {
+      setJobStage(job, 'lista', 24);
+      return;
+    }
+  };
+
+  job.onRecipeRendered = (current, total) => {
+    if (!job.counters) return;
+    job.counters.total_recipe_pages = total;
+    job.counters.rendered_recipe_pages = Math.max(
+      0,
+      Math.min(total, Number(current || 0))
+    );
+    if (job.status === 'processing') {
+      const ratio = total > 0 ? job.counters.rendered_recipe_pages / total : 0;
+      setJobStage(job, 'recipe_added', 25 + Math.round(ratio * 55));
+    }
+  };
+
   const { html, model } = renderLegacyBoldDocument(job);
   job.rendered_model = model;
   job.rendered_html_bytes = Buffer.byteLength(html, 'utf8');
+  if (job.counters.total_recipe_pages <= 0 && Array.isArray(model?.recipes)) {
+    job.counters.total_recipe_pages = model.recipes.length;
+  }
+  if (!Number.isFinite(job.counters.rendered_recipe_pages)) {
+    job.counters.rendered_recipe_pages = 0;
+  }
+  if (job.status === 'processing') {
+    const total = Math.max(0, Number(job.counters.total_recipe_pages || 0));
+    if (total > 0) {
+      if (Number(job.counters.rendered_recipe_pages || 0) > 0) {
+        setJobStage(job, 'recipe_added', 35);
+      } else {
+        setJobStage(job, 'collecting_files', 25);
+      }
+      job.progress = Math.max(job.progress, 35);
+    } else {
+      job.progress = Math.max(job.progress, 25);
+    }
+  }
 
   if (process.env.EXPORT_WRITE_HTML_DEBUG === 'true') {
     const debugPath = path.join(STORAGE_DIR, `${job.id}.html`);
@@ -215,13 +471,23 @@ async function generatePdf(job) {
   }
 
   try {
-    return await renderHtmlToPdf(html);
+    if (job.status === 'processing') {
+      setJobStage(job, 'stitching_pdf', 80);
+    }
+    const pdfBuffer = await renderHtmlToPdf(html);
+    if (job.status === 'processing') {
+      job.progress = Math.max(job.progress, 70);
+    }
+    return pdfBuffer;
   } catch (error) {
     job.render_error = error.message;
     if (String(process.env.EXPORT_ALLOW_PDFKIT_FALLBACK || 'false') === 'true') {
       return buildPdfFromPayload(job);
     }
     throw new Error(`HTML render failed: ${error.message}`);
+  } finally {
+    delete job.onStageChange;
+    delete job.onRecipeRendered;
   }
 }
 

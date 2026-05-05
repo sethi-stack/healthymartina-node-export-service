@@ -52,13 +52,33 @@ function renderLegacyBoldDocument(job) {
     hasRecipePages &&
     hasSelectedRecipes;
   const showCover = profile === 'calendar_bundle' && showCalendar && !!model.cover?.image;
+  const notifyStage = (stage, meta = {}) => {
+    if (typeof job?.onStageChange === 'function') {
+      job.onStageChange(stage, meta);
+    }
+  };
 
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${model.cover.title}</title>${renderStyles()}</head><body>
     ${showCover ? renderCover(model) : ''}
-    ${showCalendar ? renderWeeklyPlan(model) : ''}
-    ${showNutrition ? renderNutritionSummary(model) : ''}
-    ${showLista ? renderLista(model) : ''}
-    ${showRecipes ? renderRecipes(model) : ''}
+    ${showCalendar ? (() => {
+      notifyStage('calendar');
+      return renderWeeklyPlan(model);
+    })() : ''}
+    ${showNutrition ? (() => {
+      notifyStage('nutrition');
+      return renderNutritionSummary(model);
+    })() : ''}
+    ${showLista ? (() => {
+      notifyStage('lista');
+      return renderLista(model);
+    })() : ''}
+    ${showRecipes ? renderRecipes(model, {
+      onRecipeRendered: (current, total, recipe) => {
+        if (typeof job?.onRecipeRendered === 'function') {
+          job.onRecipeRendered(current, total, recipe);
+        }
+      },
+    }) : ''}
   </body></html>`;
 
   return { html, model };
